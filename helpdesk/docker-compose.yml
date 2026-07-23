@@ -1,0 +1,24 @@
+# Local Postgres 16 so dev matches Azure Database for PostgreSQL Flexible Server.
+#   docker compose up -d
+# then point DATABASE_URL / DIRECT_URL at localhost:5432 (see .env.example).
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: helpdesk-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: helpdesk
+      POSTGRES_PASSWORD: helpdesk
+      POSTGRES_DB: helpdesk
+    ports:
+      - "5432:5432"
+    volumes:
+      - helpdesk_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U helpdesk"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  helpdesk_pgdata:

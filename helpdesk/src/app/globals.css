@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --navy-900: #0a2540;
+  --gold-500: #c99a2e;
+  --ivory: #f8f6f1;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--ivory);
+  color: #2b2e33;
+  -webkit-font-smoothing: antialiased;
+}

@@ -1,0 +1,79 @@
+# Azure DevOps pipeline (matches the PMO app's CI/CD).
+# Build -> test -> deploy to the App Service `staging` slot -> manual-gate swap.
+trigger:
+  branches:
+    include:
+      - main
+      - claude/*
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  NODE_VERSION: "22.x"
+  AZURE_SUBSCRIPTION: "<service-connection-name>"
+  APP_NAME: "<app-service-name>"
+
+stages:
+  - stage: Build
+    jobs:
+      - job: build_test
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: $(NODE_VERSION)
+          - script: npm ci
+            displayName: Install
+          - script: npm run typecheck
+            displayName: Typecheck
+          - script: npm test
+            displayName: Unit tests (Vitest)
+          - script: npm run build
+            displayName: Build (prisma generate + migrate deploy + next build)
+            env:
+              DATABASE_URL: $(DATABASE_URL)
+              DIRECT_URL: $(DIRECT_URL)
+          - task: ArchiveFiles@2
+            inputs:
+              rootFolderOrFile: "$(System.DefaultWorkingDirectory)"
+              includeRootFolder: false
+              archiveFile: "$(Build.ArtifactStagingDirectory)/app.zip"
+          - publish: "$(Build.ArtifactStagingDirectory)/app.zip"
+            artifact: app
+
+  - stage: DeployStaging
+    dependsOn: Build
+    jobs:
+      - deployment: deploy_staging
+        environment: helpdesk-staging
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: app
+                - task: AzureWebApp@1
+                  inputs:
+                    azureSubscription: $(AZURE_SUBSCRIPTION)
+                    appName: $(APP_NAME)
+                    deployToSlotOrASE: true
+                    slotName: staging
+                    package: "$(Pipeline.Workspace)/app/app.zip"
+
+  - stage: SwapProduction
+    dependsOn: DeployStaging
+    # Add a manual approval gate on the `helpdesk-production` environment.
+    jobs:
+      - deployment: swap
+        environment: helpdesk-production
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureAppServiceManage@0
+                  inputs:
+                    azureSubscription: $(AZURE_SUBSCRIPTION)
+                    action: "Swap Slots"
+                    webAppName: $(APP_NAME)
+                    sourceSlot: staging
+                    targetSlot: production

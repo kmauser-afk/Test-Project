@@ -1,0 +1,537 @@
+// St. Mary's Bank — Help Desk
+// Server-first Next.js + Prisma/Postgres (sibling to the PMO app).
+// Pooled DATABASE_URL at runtime; direct DIRECT_URL for migrations.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────── Enums ───────────────────────────
+
+enum UserRole {
+  END_USER
+  AGENT
+  LEAD
+  DEPT_ADMIN
+  SYS_ADMIN
+  AUDITOR
+}
+
+enum QueueRole {
+  AGENT
+  LEAD
+  DEPT_ADMIN
+  COLLABORATOR
+  VIEWER
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum TicketStatus {
+  NEW
+  ASSIGNED
+  IN_PROGRESS
+  PENDING
+  RESOLVED
+  CLOSED
+  CANCELLED
+}
+
+enum Priority {
+  P1
+  P2
+  P3
+  P4
+}
+
+enum Severity {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum TicketSource {
+  PORTAL
+  EMAIL
+  PHONE
+  WALKUP
+  API
+}
+
+enum CommentVisibility {
+  PUBLIC
+  INTERNAL
+}
+
+enum ScanStatus {
+  PENDING
+  CLEAN
+  INFECTED
+}
+
+enum ClockType {
+  RESPONSE
+  RESOLVE
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ArticleVisibility {
+  PUBLIC
+  INTERNAL
+}
+
+enum ArticleStatus {
+  DRAFT
+  IN_REVIEW
+  PUBLISHED
+  ARCHIVED
+}
+
+enum AutomationTrigger {
+  ON_CREATE
+  ON_UPDATE
+  ON_REPLY
+  ON_SLA_WARNING
+  SCHEDULED
+}
+
+enum LinkType {
+  PARENT
+  CHILD
+  RELATED
+  DUPLICATE
+}
+
+// ─────────────────────── Auth.js models ───────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String? // Credentials provider (local/dev accounts); Entra users are null
+  role          UserRole  @default(END_USER)
+
+  employee   Employee? @relation(fields: [employeeId], references: [id])
+  employeeId String?   @unique
+
+  accounts Account[]
+  sessions Session[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─────────────────────── Org / identity ───────────────────────
+
+model Employee {
+  id          String         @id @default(cuid())
+  externalId  String?        @unique // Entra object id
+  displayName String
+  email       String         @unique
+  title       String?
+  phone       String?
+  location    String?
+  status      EmployeeStatus @default(ACTIVE)
+
+  department   Department? @relation(fields: [departmentId], references: [id])
+  departmentId String?
+
+  manager   Employee?  @relation("EmployeeManager", fields: [managerId], references: [id])
+  managerId String?
+  reports   Employee[] @relation("EmployeeManager")
+
+  user User?
+
+  memberships      QueueMembership[]
+  requestedTickets Ticket[]          @relation("Requester")
+  assignedTickets  Ticket[]          @relation("Assignee")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Department {
+  id         String       @id @default(cuid())
+  name       String
+  slug       String       @unique
+  parent     Department?  @relation("DeptTree", fields: [parentId], references: [id])
+  parentId   String?
+  children   Department[] @relation("DeptTree")
+  adminGroup String?
+  isActive   Boolean      @default(true)
+
+  queues       Queue[]
+  employees    Employee[]
+  slaPolicies  SlaPolicy[]
+  requestTypes RequestType[]
+
+  createdAt DateTime @default(now())
+}
+
+model Queue {
+  id          String  @id @default(cuid())
+  name        String
+  slug        String  @unique
+  description String?
+  isPrivate   Boolean @default(true)
+
+  department   Department @relation(fields: [departmentId], references: [id])
+  departmentId String
+
+  defaultAssigneeId String? // Employee id (scalar; no back-relation needed)
+  defaultSlaPolicy   SlaPolicy? @relation(fields: [defaultSlaPolicyId], references: [id])
+  defaultSlaPolicyId String?
+  businessHours      BusinessHoursCalendar? @relation(fields: [businessHoursId], references: [id])
+  businessHoursId    String?
+
+  memberships  QueueMembership[]
+  tickets      Ticket[]
+  requestTypes RequestType[]
+
+  createdAt DateTime @default(now())
+}
+
+// Heart of scoped permissions: (employee) x (queue) x (role).
+model QueueMembership {
+  id         String    @id @default(cuid())
+  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId String
+  queue      Queue     @relation(fields: [queueId], references: [id], onDelete: Cascade)
+  queueId    String
+  role       QueueRole
+  grantedBy  String? // Employee id (audit)
+  grantedAt  DateTime  @default(now())
+  expiresAt  DateTime?
+
+  @@unique([employeeId, queueId])
+  @@index([queueId])
+}
+
+// ─────────────────────── Tickets ───────────────────────
+
+model Ticket {
+  id        String @id @default(cuid())
+  reference String @unique // human key e.g. IT-104829
+
+  queue   Queue  @relation(fields: [queueId], references: [id])
+  queueId String
+
+  requestType   RequestType? @relation(fields: [requestTypeId], references: [id])
+  requestTypeId String?
+
+  requester   Employee @relation("Requester", fields: [requesterId], references: [id])
+  requesterId String
+
+  assignee   Employee? @relation("Assignee", fields: [assigneeId], references: [id])
+  assigneeId String?
+
+  subject       String
+  status        TicketStatus @default(NEW)
+  priority      Priority     @default(P3)
+  impact        Severity     @default(MEDIUM)
+  urgency       Severity     @default(MEDIUM)
+  categoryId    String?
+  subcategoryId String?
+  source        TicketSource @default(PORTAL)
+  formData      Json         @default("{}")
+
+  slaResponseDue  DateTime?
+  slaResolveDue   DateTime?
+  firstRespondedAt DateTime?
+  resolvedAt      DateTime?
+  closedAt        DateTime?
+  reopenCount     Int      @default(0)
+
+  comments    Comment[]
+  events      TicketEvent[]
+  attachments Attachment[]
+  approvals   Approval[]
+  slaClocks   SlaClock[]
+  links       TicketLink[]      @relation("LinkSource")
+  surveyResponses SurveyResponse[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([queueId, status])
+  @@index([assigneeId])
+  @@index([requesterId])
+}
+
+model Comment {
+  id         String            @id @default(cuid())
+  ticket     Ticket            @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticketId   String
+  authorId   String // Employee id
+  body       String            @db.Text
+  visibility CommentVisibility @default(PUBLIC)
+  isSystem   Boolean           @default(false)
+  createdAt  DateTime          @default(now())
+
+  @@index([ticketId])
+}
+
+// Append-only timeline + audit (mirrors PMO's WorkItemActivity). Never updated/deleted.
+model TicketEvent {
+  id        String   @id @default(cuid())
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticketId  String
+  actorId   String? // Employee id (null = system)
+  eventType String
+  fromValue String?
+  toValue   String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([ticketId])
+}
+
+model Attachment {
+  id          String     @id @default(cuid())
+  ticket      Ticket     @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticketId    String
+  commentId   String?
+  filename    String
+  contentType String
+  size        Int
+  storageKey  String // Blob key
+  scanStatus  ScanStatus @default(PENDING)
+  uploadedBy  String // Employee id
+  createdAt   DateTime   @default(now())
+
+  @@index([ticketId])
+}
+
+model TicketLink {
+  id             String   @id @default(cuid())
+  source         Ticket   @relation("LinkSource", fields: [sourceTicketId], references: [id], onDelete: Cascade)
+  sourceTicketId String
+  targetTicketId String
+  type           LinkType
+  createdAt      DateTime @default(now())
+
+  @@unique([sourceTicketId, targetTicketId, type])
+}
+
+// ─────────────────────── Service catalog / forms ───────────────────────
+
+model RequestType {
+  id               String   @id @default(cuid())
+  name             String
+  description      String?
+  icon             String?
+  defaultPriority  Priority @default(P3)
+  isActive         Boolean  @default(true)
+
+  department   Department? @relation(fields: [departmentId], references: [id])
+  departmentId String?
+  queue        Queue?      @relation(fields: [queueId], references: [id])
+  queueId      String?
+
+  formDefinition   FormDefinition? @relation(fields: [formDefinitionId], references: [id])
+  formDefinitionId String?
+
+  approvalChainId String?
+
+  tickets Ticket[]
+
+  createdAt DateTime @default(now())
+}
+
+model FormDefinition {
+  id        String        @id @default(cuid())
+  name      String
+  schema    Json          @default("{}")
+  version   Int           @default(1)
+  requestTypes RequestType[]
+  createdAt DateTime      @default(now())
+}
+
+// ─────────────────────── SLA ───────────────────────
+
+model SlaPolicy {
+  id              String  @id @default(cuid())
+  name            String
+  targets         Json    @default("{}") // { p1: { responseMins, resolveMins }, ... }
+  pauseOnStatuses String[] @default([])
+
+  department   Department? @relation(fields: [departmentId], references: [id])
+  departmentId String?
+  businessHours   BusinessHoursCalendar? @relation(fields: [businessHoursId], references: [id])
+  businessHoursId String?
+
+  queues Queue[]
+
+  createdAt DateTime @default(now())
+}
+
+model SlaClock {
+  id         String    @id @default(cuid())
+  ticket     Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticketId   String
+  clockType  ClockType
+  targetAt   DateTime
+  pausedAt   DateTime?
+  elapsedMs  Int       @default(0)
+  breached   Boolean   @default(false)
+  breachedAt DateTime?
+
+  @@index([ticketId])
+}
+
+model BusinessHoursCalendar {
+  id            String  @id @default(cuid())
+  name          String
+  timezone      String  @default("America/New_York")
+  weeklySchedule Json   @default("{}")
+  holidays      Json    @default("[]")
+  queues        Queue[]
+  slaPolicies   SlaPolicy[]
+  createdAt     DateTime @default(now())
+}
+
+// ─────────────────────── Approvals ───────────────────────
+
+model Approval {
+  id       String         @id @default(cuid())
+  ticket   Ticket         @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticketId String
+  chainId  String?
+  status   ApprovalStatus @default(PENDING)
+  steps    ApprovalStep[]
+  createdAt DateTime      @default(now())
+
+  @@index([ticketId])
+}
+
+model ApprovalStep {
+  id         String         @id @default(cuid())
+  approval   Approval       @relation(fields: [approvalId], references: [id], onDelete: Cascade)
+  approvalId String
+  stepNo     Int
+  approverId String // Employee id
+  status     ApprovalStatus @default(PENDING)
+  decidedAt  DateTime?
+  comment    String?
+
+  @@index([approvalId])
+}
+
+// ─────────────────────── Automation ───────────────────────
+
+model AutomationRule {
+  id         String            @id @default(cuid())
+  name       String
+  scope      String            @default("queue") // queue | dept | global
+  trigger    AutomationTrigger
+  conditions Json              @default("{}")
+  actions    Json              @default("[]")
+  isActive   Boolean           @default(true)
+  runOrder   Int               @default(0)
+  createdAt  DateTime          @default(now())
+}
+
+// ─────────────────────── Knowledge base ───────────────────────
+
+model KnowledgeArticle {
+  id               String            @id @default(cuid())
+  title            String
+  slug             String            @unique
+  visibility       ArticleVisibility @default(PUBLIC)
+  departmentId     String? // null = all departments
+  status           ArticleStatus     @default(DRAFT)
+  currentVersionId String?
+  versions         ArticleVersion[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+}
+
+model ArticleVersion {
+  id         String           @id @default(cuid())
+  article    KnowledgeArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  articleId  String
+  body       String           @db.Text
+  authorId   String // Employee id
+  changeNote String?
+  createdAt  DateTime         @default(now())
+
+  @@index([articleId])
+}
+
+// ─────────────────────── Surveys ───────────────────────
+
+model Survey {
+  id           String           @id @default(cuid())
+  name         String
+  departmentId String?
+  questions    Json             @default("[]")
+  trigger      String           @default("on_close")
+  responses    SurveyResponse[]
+  createdAt    DateTime         @default(now())
+}
+
+model SurveyResponse {
+  id          String   @id @default(cuid())
+  ticket      Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticketId    String
+  survey      Survey   @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  surveyId    String
+  rating      Int
+  comment     String?
+  token       String   @unique
+  submittedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([ticketId])
+}
