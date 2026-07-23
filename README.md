@@ -4,7 +4,7 @@ Enterprise Service Management (help desk) for ~300 employees across IT and
 non-technical departments. Built as a **sibling app to the Credit Union PMO
 tool** — same stack, same patterns, so both can later fold into one intranet.
 
-**Design doc:** [`../docs/helpdesk/technical-spec.md`](../docs/helpdesk/technical-spec.md)
+**Design doc:** [`docs/helpdesk/technical-spec.md`](docs/helpdesk/technical-spec.md)
 
 ## Stack
 Server-first **Next.js 14 (App Router) + TypeScript**, **PostgreSQL via Prisma**,
@@ -15,6 +15,7 @@ separate API tier.
 
 ## Local development
 ```bash
+# 0. (from the repo root — the help desk IS the repo now)
 # 1. Start Postgres 16 (matches Azure Flexible Server)
 docker compose up -d
 
@@ -64,7 +65,7 @@ enterprise target — same codebase, portable either way.
 
 1. **Provision Postgres** — create a **Neon** project (serverless Postgres 16).
    Copy the **pooled** and **direct** connection strings.
-2. **Import the repo** in Vercel and set the project root to `helpdesk/`.
+2. **Import the repo** in Vercel (root directory = repo root).
    Vercel auto-detects Next.js; `vercel.json` sets the build command to
    `npm run build` (which runs `prisma generate → migrate deploy → next build`).
 3. **Set environment variables** (Project → Settings → Environment Variables):
