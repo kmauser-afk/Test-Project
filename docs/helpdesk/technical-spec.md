@@ -478,6 +478,13 @@ All actions call `authz()` first, validate with **Zod**, write via Prisma, appen
 ### 11.4 Observability
 - **Application Insights** for request tracing, dependency timing, custom metrics (SLA breach rate, queue depth, job duration); Azure Monitor alerts + availability pings.
 
+### 11.5 Portability — Vercel as an alternative host
+Because this is a standard Node + Next.js + Prisma/Postgres app (same portability principle as the PMO blueprint), it also deploys to **Vercel** with no code changes — useful for fast preview/vibe deploys, exactly as the PMO app runs today. Only three things swap:
+- **Database:** managed serverless Postgres (**Neon**), using its pooled URL for `DATABASE_URL` and direct URL for `DIRECT_URL` — the two-connection-string pattern we already use.
+- **Scheduling:** **Vercel Cron** calls the same secret-guarded `/api/jobs/*` routes instead of an App Service WebJob (Hobby plan = daily; Pro = hourly/finer).
+- **Secrets:** Vercel project env vars instead of Key Vault.
+Azure App Service remains the enterprise target; the single codebase runs on either. `vercel.json` + a working `/api/jobs/sla-sweep` cron route are included in the repo.
+
 ---
 
 ## 12. Non-Functional Requirements
