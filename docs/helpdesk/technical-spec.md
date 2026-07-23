@@ -3,7 +3,7 @@
 
 **Status:** Draft for review
 **Author:** IT / Engineering
-**Scope:** Fully custom, on-premise / private-cloud Enterprise Service Management (ESM) platform
+**Scope:** Custom Enterprise Service Management (ESM) platform, vibe-coded and hosted on **Azure App Service** with Azure managed services
 **Audience:** ~300 employees across multiple IT teams and non-technical departments (Facilities, Marketing, HR, Operations)
 
 ---
@@ -36,7 +36,8 @@ A single ticketing engine serving many isolated department workspaces. One platf
 - **Powerful for agents & admins** — routing, SLAs, automation, reporting.
 - **Compliance-grade** — GLBA/NCUA aligned, immutable audit trail, least-privilege by default.
 - **Isolated by default** — a department only sees its own queues unless access is explicitly granted.
-- **On-prem data residency** — all data and PII remain on St. Mary's controlled infrastructure.
+- **Cloud data residency** — all data and PII stay within a compliant Azure region (US) under a Microsoft enterprise agreement; no third-party SaaS.
+- **Vibe-coded, ship-fast** — one cohesive full-stack codebase, managed Azure services over bespoke infra, iterate quickly with AI-assisted development.
 
 ### 1.3 Success metrics
 - First-response SLA compliance ≥ 90%.
@@ -48,69 +49,75 @@ A single ticketing engine serving many isolated department workspaces. One platf
 
 ## 2. Architecture
 
-### 2.1 High-level topology
+### 2.1 High-level topology (Azure PaaS)
 ```
-                         ┌───────────────────────────────┐
-                         │      Reverse Proxy (nginx)     │  TLS termination, WAF
-                         └───────────────┬───────────────┘
-             ┌───────────────────────────┼───────────────────────────┐
-             ▼                           ▼                           ▼
-    ┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐
-    │  End-User Portal │       │ Agent Workspace  │       │  Admin Console   │   React SPAs
-    └──────────────────┘       └──────────────────┘       └──────────────────┘
-             └───────────────────────────┼───────────────────────────┘
-                                         ▼
-                         ┌───────────────────────────────┐
-                         │        API Gateway / BFF       │  AuthN/Z, rate limit, routing
-                         └───────────────┬───────────────┘
-        ┌────────────┬───────────────────┼───────────────────┬────────────┐
-        ▼            ▼                    ▼                   ▼            ▼
-  ┌──────────┐ ┌──────────┐      ┌───────────────┐   ┌──────────────┐ ┌──────────┐
-  │ Ticket   │ │ Identity │      │ SLA / Timer   │   │ Workflow /   │ │ Reporting│  Services
-  │ Service  │ │ & RBAC   │      │ Engine        │   │ Automation   │ │ Service  │
-  └──────────┘ └──────────┘      └───────────────┘   └──────────────┘ └──────────┘
-        │            │                    │                   │            │
-        └────────────┴─────────┬──────────┴─────────┬─────────┴────────────┘
-                               ▼                    ▼
-                     ┌──────────────────┐  ┌──────────────────┐
-                     │ Background Worker │  │  Notification    │
-                     │ (jobs, email poll)│  │  Service         │
-                     └──────────────────┘  └──────────────────┘
-        ┌────────────┬───────────────┬──────────────┬───────────────┐
-        ▼            ▼               ▼              ▼               ▼
-  ┌──────────┐ ┌──────────┐  ┌──────────────┐ ┌──────────┐  ┌──────────────┐
-  │PostgreSQL│ │  Redis   │  │ Object Store │ │OpenSearch│  │  Audit Log   │
-  │ (OLTP)   │ │(cache/   │  │ (MinIO,      │ │(KB/ticket│  │ (append-only)│
-  │          │ │ queue/   │  │  attachments,│ │ search)  │  │              │
-  │          │ │ timers)  │  │  AV-scanned) │ │          │  │              │
-  └──────────┘ └──────────┘  └──────────────┘ └──────────┘  └──────────────┘
+                          ┌──────────────────────────────┐
+   Employees ── HTTPS ──► │   Azure Front Door + WAF     │  TLS, WAF, CDN for static assets
+                          └───────────────┬──────────────┘
+                                          ▼
+                          ┌──────────────────────────────┐
+                          │   Azure App Service (Linux)   │  Next.js full-stack app
+                          │  ┌────────────────────────┐   │   • End-User Portal (SSR/React)
+                          │  │ UI (React) + API routes │   │   • Agent Workspace
+                          │  └────────────────────────┘   │   • Admin Console
+                          │   Auth · RBAC · Tickets · SLA │   • /api route handlers
+                          │   Workflow · KB · Reporting   │
+                          └───────┬───────────────┬───────┘
+                                  │               │ triggers/timers
+                                  │               ▼
+                                  │      ┌──────────────────────┐
+                                  │      │  Azure Functions      │  SLA checks, escalations,
+                                  │      │  (background jobs)     │  email poll, survey dispatch
+                                  │      └──────────┬────────────┘
+        ┌──────────────┬──────────┼────────────────┼───────────────┬──────────────┐
+        ▼              ▼          ▼                ▼               ▼              ▼
+┌──────────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐ ┌──────────┐ ┌──────────────┐
+│ Azure DB for │ │  Azure   │ │  Azure   │ │ Azure Service│ │ Azure AI │ │ Microsoft    │
+│ PostgreSQL   │ │  Cache   │ │  Blob    │ │ Bus / Storage│ │ Search   │ │ Entra ID     │
+│ Flexible Srv │ │ for Redis│ │ Storage  │ │ Queue        │ │ (KB/     │ │ (SSO, MFA)   │
+│ (OLTP+audit) │ │(sessions,│ │(attach., │ │ (job/event   │ │ ticket   │ │              │
+│              │ │ cache)   │ │ AV-scan) │ │  bus)        │ │ search)  │ │              │
+└──────────────┘ └──────────┘ └──────────┘ └──────────────┘ └──────────┘ └──────────────┘
+        │                                                                        │
+        ▼                                                                        ▼
+┌──────────────┐                                                        ┌──────────────┐
+│ Azure Key    │  secrets, connection strings, signing keys             │ Microsoft    │
+│ Vault        │                                                        │ Graph (email)│
+└──────────────┘                                                        └──────────────┘
+
+         Observability: Application Insights + Azure Monitor / Log Analytics
 ```
 
-### 2.2 Architectural style
-- **Modular monolith** for the core API (single deployable, module boundaries enforced in code), with **separately scalable workers** for background jobs, email ingestion, SLA timers, and notifications.
-  - Rationale: a modular monolith is far simpler to operate on-prem than microservices for a 300-user footprint, while preserving clean module seams if we later split out a service.
-- **Event-driven internals** — domain events (`TicketCreated`, `TicketAssigned`, `SlaBreached`, `ReplyPosted`) published to an internal bus (Redis Streams) drive notifications, automation, SLA recalculation, and audit logging without coupling.
-- **CQRS-lite for reporting** — reporting reads from read-optimized projections / a reporting schema, keeping analytics queries off the transactional hot path.
+### 2.2 Architectural style — pragmatic, single-codebase
+- **One full-stack app** (Next.js App Router) deployed to **Azure App Service** — UI and API live in the same repo/deployable. This is the vibe-coding sweet spot: fast iteration, shared TypeScript types end-to-end, minimal moving parts.
+  - Rationale: for a 300-user footprint, a single well-structured app on App Service is dramatically cheaper and simpler to operate than a microservice fleet, and Azure's managed services absorb the hard infra (HA, backups, patching, search).
+- **Background work → Azure Functions** (timer + queue triggered) for SLA checks, escalations, email ingestion, survey dispatch, and notification fan-out — so long-running jobs never block web requests and scale independently.
+- **Event-driven internals** — domain events (`TicketCreated`, `TicketAssigned`, `SlaBreached`, `ReplyPosted`) placed on an **Azure Service Bus / Storage Queue** drive notifications, automation, SLA recalculation, and audit logging without coupling.
+- **Keep it boring** — module boundaries enforced by folder/domain structure in code; extract a separate service later only if a real bottleneck appears.
 
 ---
 
 ## 3. Technology Stack
 
+Chosen for **fast, AI-assisted (vibe) development on Azure App Service** — one language end-to-end, managed services over self-hosted infra.
+
 | Layer | Choice | Rationale |
 |-------|--------|-----------|
-| Frontend | **React + TypeScript**, Vite build | Shared types with backend if Node; large talent pool; component-driven design system reusing St. Mary's navy/gold brand tokens. |
-| UI system | Custom design system (tokens below) + headless components (Radix), TanStack Query, TanStack Table | Accessible primitives, dense data grids for agents. |
-| Backend | **Primary: .NET 8 (C#)**; Alt: Node.js/NestJS (TypeScript) | .NET is a strong on-prem fit for an AD/Exchange (Windows) shop with first-class Entra/AD, Hangfire, and mature long-term support. NestJS is the alternative if the team is TypeScript-first. **Deciding factor = team skill set.** |
-| Database | **PostgreSQL 16** | Robust, JSONB for dynamic form data, strong FTS, row-level security available, fully on-prem. |
-| Cache / queue / timers | **Redis** (+ Redis Streams) | Session cache, background job broker, SLA timer wheel, internal event bus. |
-| Background jobs | **Hangfire** (.NET) / **BullMQ** (Node) | Durable scheduled + recurring jobs (SLA checks, escalations, email polling, survey dispatch). |
-| Object storage | **MinIO** (S3-compatible, on-prem) | Attachments & KB media; AV-scanned before persist. |
-| Search | **OpenSearch** | KB article search, ticket full-text, deflection suggestions. Postgres FTS acceptable for MVP. |
-| Email | **Microsoft Graph API** (M365) or IMAP/SMTP | Email-to-ticket ingestion + outbound replies with threading. |
-| Auth | **OIDC / SAML → Entra ID / AD FS** | SSO, MFA, auto-provisioning of users + department attribute. |
-| Reverse proxy | **nginx** (+ ModSecurity WAF) | TLS, rate limiting, header hardening. |
-| Packaging | **Docker** containers; **Docker Compose** (small) or on-prem **Kubernetes** (scale) | Reproducible on-prem deployment. |
-| Observability | **Prometheus + Grafana + Loki**, OpenTelemetry traces | Metrics, logs, tracing on-prem. |
+| Full-stack framework | **Next.js 14+ (App Router) + TypeScript** | UI + API in one deployable; SSR for a snappy portal; runs natively on Azure App Service (Linux, Node). Single language = ideal vibe-coding loop. |
+| UI system | Tailwind CSS + shadcn/ui (Radix under the hood), TanStack Query, TanStack Table | Fast to compose, accessible primitives, dense agent grids; themed with St. Mary's navy/gold tokens. |
+| ORM / DB access | **Prisma** | Type-safe schema-first models, painless migrations — excellent for iterative vibe coding. |
+| Database | **Azure Database for PostgreSQL — Flexible Server** | Managed HA, backups, PITR; JSONB for dynamic forms; row-level security; `pgvector` available if we add AI later. |
+| Cache / sessions | **Azure Cache for Redis** | Session store, rate-limit counters, hot-path cache, lightweight event/queue use. |
+| Background jobs | **Azure Functions** (timer + queue triggers) | Serverless SLA checks, escalations, email polling, survey dispatch, notification fan-out — scales independently of the web app. |
+| Event/job bus | **Azure Service Bus** (or Storage Queues for MVP) | Durable domain-event delivery to Functions/automation. |
+| Object storage | **Azure Blob Storage** | Attachments & KB media; **Microsoft Defender for Storage** for malware scanning. |
+| Search | **Azure AI Search** | KB + ticket full-text, deflection suggestions, semantic ranking. Postgres FTS is fine for MVP to move fast. |
+| Auth | **Microsoft Entra ID** via **Auth.js (NextAuth)** or **MSAL** | SSO, MFA, auto-provision users + department claim; App Service Easy Auth optional. |
+| Email | **Microsoft Graph API** (M365) | Email-to-ticket ingestion + threaded outbound replies via per-queue mailboxes. |
+| Edge / security | **Azure Front Door + WAF** | TLS, WAF rules, CDN for static assets, rate limiting. |
+| Secrets | **Azure Key Vault** (referenced from App Service settings) | Connection strings, signing keys, API secrets — no secrets in code. |
+| CI/CD | **GitHub Actions → Azure App Service** (deployment slots) | Push-to-deploy, staging slot + swap, automated tests & scans. |
+| Observability | **Application Insights + Azure Monitor / Log Analytics** | Metrics, distributed tracing, logs, alerting — no infra to run. |
 
 ### 3.1 Brand design tokens (reused from existing site)
 ```
@@ -317,7 +324,7 @@ new ─► assigned ─► in_progress ─► resolved ─► closed
 
 ### 6.3 SLA & escalation engine
 - Each ticket spawns `sla_clocks` (response + resolve) computed against the queue's `sla_policy` and `business_hours_calendar`.
-- A **timer wheel in Redis** schedules checks at warning thresholds (e.g. 75%, 90%, breach).
+- A **timer-triggered Azure Function** (plus scheduled Service Bus messages) evaluates clocks at warning thresholds (e.g. 75%, 90%, breach).
 - On threshold: notify assignee/lead; on breach: mark `breached`, run escalation actions (reassign, bump priority, notify management).
 - Clocks pause on `pending`/configured statuses; recalculated on queue transfer.
 
@@ -441,34 +448,37 @@ POST   /api/v1/ingest/email                                    # from mail worke
 
 ## 10. Security & Compliance
 
-- **Data residency:** all data, attachments, backups on St. Mary's on-prem/private-cloud infrastructure.
+- **Data residency & cloud posture:** all data, attachments, and backups stay in a **US Azure region** under St. Mary's tenant. Rely on Azure's compliance inheritance (SOC 2, ISO 27001, FedRAMP; Microsoft's data-processing terms) and confirm coverage of GLBA/NCUA obligations with the examiner during vendor/cloud risk review.
 - **Immutable audit log:** append-only `ticket_events` + a separate system audit store (auth events, config changes, access grants). Exportable for NCUA/examiners.
-- **GLBA / PII:** data classification, field-level encryption (pgcrypto/app-layer) for sensitive fields, redaction tooling for KB/attachments.
-- **AuthZ defense-in-depth:** policy middleware + PostgreSQL row-level security.
-- **Least privilege & access reviews:** time-boxed queue grants (`expires_at`), periodic recertification reports.
+- **GLBA / PII:** data classification, field-level encryption (Postgres `pgcrypto`/app-layer) for sensitive fields, redaction tooling for KB/attachments.
+- **AuthZ defense-in-depth:** policy checks in the API layer + PostgreSQL row-level security.
+- **Least privilege & access reviews:** time-boxed queue grants (`expires_at`), periodic recertification reports; **Entra ID Conditional Access** + MFA at the front door.
 - **Separation of duties:** no self-approval of privileged requests.
-- **Attachment safety:** AV scan (ClamAV) before persistence; block/quarantine on infection.
-- **Transport & at-rest:** TLS 1.2+ everywhere, disk/db encryption at rest, secrets in a vault (e.g. HashiCorp Vault / DPAPI).
-- **Hardening:** nginx WAF, security headers, rate limiting, input validation, output encoding, dependency scanning, periodic pen tests; SOC 2-aligned controls.
+- **Attachment safety:** **Microsoft Defender for Storage** scans blobs on upload; quarantine/block on detection.
+- **Transport & at-rest:** TLS 1.2+ (Front Door + App Service), Azure encryption at rest for DB/Blob (customer-managed keys optional), all secrets in **Azure Key Vault** (no secrets in code or config).
+- **Hardening:** Azure Front Door **WAF**, security headers, rate limiting, input validation, output encoding, GitHub dependency/secret scanning, **Managed Identity** for service-to-service auth (no stored credentials), periodic pen tests; SOC 2-aligned controls.
 - **Data retention & legal hold:** per-record-type retention policies, legal-hold flag prevents purge.
 
 ---
 
-## 11. Deployment & Infrastructure
+## 11. Deployment & Infrastructure (Azure)
 
-### 11.1 On-prem topology (HA)
-- **App tier:** 2+ container hosts behind nginx (active/active), stateless API + separate worker pods.
-- **PostgreSQL:** primary + streaming replica (Patroni for auto-failover), PITR backups.
-- **Redis:** sentinel/cluster for HA.
-- **MinIO:** distributed mode (erasure-coded) for attachment durability.
-- **OpenSearch:** 3-node cluster.
-- **Backups:** nightly full + WAL archiving for DB; object-store versioning; tested restore runbook; offsite encrypted copies.
+### 11.1 Azure resource footprint
+- **Azure App Service (Linux, Node)** — hosts the Next.js app. Start on the **P1v3 Premium** tier for VNet integration + autoscale; scale out on CPU/request rules.
+- **Deployment slots** — `staging` slot for zero-downtime deploys via slot swap; smoke-test before swap.
+- **Azure Functions (Consumption/Premium)** — background jobs (SLA, email poll, surveys, notifications).
+- **Azure Database for PostgreSQL Flexible Server** — zone-redundant HA, automated backups + PITR, read replica optional.
+- **Azure Cache for Redis**, **Azure Blob Storage**, **Azure AI Search**, **Azure Service Bus** — managed, no ops.
+- **Azure Front Door + WAF**, **Azure Key Vault**, **Application Insights / Log Analytics**.
+- **Networking:** App Service + Functions VNet-integrated; PostgreSQL and Redis reachable via **Private Endpoints** (no public DB exposure); **Managed Identity** for all service-to-service auth.
 
-### 11.2 Environments
-- Dev → Staging (prod-like, anonymized data) → Production. IaC (Terraform/Ansible) for reproducibility; CI/CD pipeline with automated tests, SAST/dependency scan, and gated prod deploys.
+### 11.2 Environments & CI/CD
+- **Dev → Staging → Production** via App Service slots + separate resource groups; prod-like staging with anonymized data.
+- **GitHub Actions** pipeline: lint → test → build → deploy to staging slot → automated smoke tests → manual-gate swap to prod. SAST + dependency + secret scanning in the pipeline.
+- **Infrastructure as Code:** Bicep (or Terraform) templates so the whole Azure footprint is reproducible and reviewable.
 
 ### 11.3 Observability
-- Prometheus metrics (SLA breach rate, queue depth, job latency), Grafana dashboards, Loki logs, OpenTelemetry traces, alerting to on-call.
+- **Application Insights** for request tracing, dependency timing, and custom metrics (SLA breach rate, queue depth, job latency); **Azure Monitor** alerts + dashboards; Log Analytics for query/retention. Availability tests ping the portal.
 
 ---
 
@@ -476,7 +486,7 @@ POST   /api/v1/ingest/email                                    # from mail worke
 | Attribute | Target |
 |-----------|--------|
 | Users | ~300 employees; ~40–60 concurrent agents peak |
-| Availability | 99.9% business-hours; planned maintenance windows |
+| Availability | 99.9% business-hours via App Service autoscale + zone-redundant PostgreSQL; slot swaps for zero-downtime deploys |
 | API latency | p95 < 300ms for ticket reads |
 | Ticket volume | design for 100k+ tickets/yr, 5-yr retention |
 | Search | KB/ticket results < 500ms |
@@ -490,7 +500,7 @@ POST   /api/v1/ingest/email                                    # from mail worke
 
 | Phase | Deliverables |
 |-------|-------------|
-| **0 — Foundations** | Repo/CI, Entra SSO, user/dept/queue model, RBAC + queue-membership + RLS, audit log skeleton. IT Helpdesk queue live. |
+| **0 — Foundations** | Azure landing zone (App Service, Postgres, Key Vault, Front Door) via Bicep + GitHub Actions CI/CD; Next.js scaffold; Entra SSO; user/dept/queue model; RBAC + queue-membership + RLS; audit log skeleton. IT Helpdesk queue live. |
 | **1 — MVP Ticketing** | End-user portal, agent workspace, email-to-ticket, statuses/routing/assignment, internal vs public comments, attachments+AV, basic notifications. |
 | **2 — Service Management** | Dynamic form builder + service catalog, SLA & escalation engine, approvals/workflow automation, KB with deflection. |
 | **3 — Multi-Department Rollout** | Onboard Facilities, Marketing, HR, Ops with isolated queues; surveys/CSAT; Teams integration. |
@@ -499,13 +509,14 @@ POST   /api/v1/ingest/email                                    # from mail worke
 ---
 
 ## 14. Risks & Open Questions
-1. **Backend language** — confirm .NET vs Node/NestJS based on team skills (affects hiring/maintenance).
-2. **Email platform** — Graph API (M365) assumed; confirm mail environment.
-3. **Change/Problem management (ITIL)** — include formal change/problem modules, or ticketing + approvals only for now?
-4. **CMDB scope** — build native asset tracking or integrate existing endpoint tooling only?
-5. **Chatbot / AI triage** — future scope for auto-categorization & suggested replies?
-6. **Migration** — is there an existing helpdesk/email-inbox whose historical tickets must be imported?
-7. **Regulatory sign-off** — confirm which controls compliance/audit require before go-live (retention periods, audit export format).
+1. **Cloud compliance sign-off** — confirm GLBA/NCUA examiner acceptance of hosting member-adjacent data in Azure (region, Microsoft DPA/BAA, third-party risk assessment) before go-live.
+2. **Azure subscription & landing zone** — is there an existing St. Mary's Azure tenant/subscription, region preference (e.g. East US 2), and networking baseline to deploy into?
+3. **Email platform** — Microsoft Graph (M365) assumed; confirm per-queue shared mailboxes can be provisioned.
+4. **Change/Problem management (ITIL)** — include formal change/problem modules, or ticketing + approvals only for now?
+5. **CMDB scope** — build native asset tracking or integrate existing endpoint tooling only?
+6. **AI triage** — with `pgvector`/Azure AI Search already in the stack, do we want auto-categorization & suggested replies in an early phase?
+7. **Migration** — is there an existing helpdesk/email-inbox whose historical tickets must be imported?
+8. **Cost guardrails** — set an Azure budget + alerts; right-size App Service/Functions tiers for ~300 users.
 
 ---
 *End of specification — v0.1 draft for review.*
