@@ -67,24 +67,28 @@ button, .btn {
 .rail {
   background: var(--navy);
   color: #f4efe4;
-  padding: 1.25rem 1rem 2rem;
+  padding: 1.25rem 1.1rem 2rem;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  overflow: visible;
 }
 .rail .lockup { width: 168px; filter: brightness(0) invert(1); }
-.rail nav { display: flex; flex-direction: column; gap: 0.25rem; }
+.rail nav { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
 .rail a {
-  padding: 0.7rem 0.85rem;
+  display: block;
+  padding: 0.7rem 0.85rem 0.7rem 1rem;
   border-radius: 8px;
   color: rgba(255,255,255,0.78);
   font-weight: 500;
+  border-left: 3px solid transparent;
+  white-space: nowrap;
 }
 .rail a.active, .rail a:hover {
   background: rgba(196,148,37,0.22);
   color: #fff;
 }
-.rail a.active { box-shadow: inset 3px 0 0 var(--gold); }
+.rail a.active { border-left-color: var(--gold); }
 .rail .foot {
   margin-top: auto;
   font-size: 0.8rem;
