@@ -1,11 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "buildCommand": "npm run build",
-  "crons": [
-    {
-      "path": "/api/jobs/sla-sweep",
-      "schedule": "0 * * * *"
-    }
-  ]
+  "buildCommand": "npm run build"
 }
