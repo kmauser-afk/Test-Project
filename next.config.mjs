@@ -8,6 +8,12 @@ const nextConfig = {
       bodySizeLimit: "5mb",
     },
   },
+  async rewrites() {
+    return [
+      { source: "/ux", destination: "/ux/index.html" },
+      { source: "/ux/", destination: "/ux/index.html" },
+    ];
+  },
 };
 
 export default nextConfig;
