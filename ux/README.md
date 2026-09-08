@@ -1,6 +1,6 @@
 # HighWise UX kit
 
-Static HTML frames matching the HighWise UX Design tokens:
+Static HTML frames live in [`public/ux`](../public/ux) so Next.js / Vercel serves them at `/ux`.
 
 | Token | Value | Use |
 |-------|-------|-----|
@@ -12,18 +12,17 @@ Static HTML frames matching the HighWise UX Design tokens:
 
 ## Frames
 
-- `index.html` — kit index
-- `c1-caseload.html` — counselor caseload (`/app`)
-- `c3-list.html` — college list (the product)
-- `s1-home.html` — student home (`/s`, 390)
-- `s2-list.html` — student list cards
-
-Official lockup: `logo.svg` (cap + two chevrons). Do not ship a shield-H, a star, or “High Wise” as two words.
+- `/ux` — kit index
+- `/ux/c1-caseload.html` — counselor caseload
+- `/ux/c3-list.html` — college list
+- `/ux/s1-home.html` — student home
+- `/ux/s2-list.html` — student list
 
 ## Preview
 
 ```bash
-npx --yes serve ux -p 4173
+npm run dev
+# open http://localhost:3000/ux
 ```
 
-Open http://localhost:4173
+Or: `npx --yes serve public/ux -p 4173`
