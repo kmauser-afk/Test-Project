@@ -1,6 +1,6 @@
 # HighWise UX kit
 
-Static HTML frames matching [HighWise UX Design](../docs/helpdesk/technical-spec.md) companion doc tokens:
+Static HTML frames matching the HighWise UX Design tokens:
 
 | Token | Value | Use |
 |-------|-------|-----|
