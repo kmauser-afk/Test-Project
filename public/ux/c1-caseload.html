@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HighWise · Caseload</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="rail">
+      <img class="lockup" src="logo.svg" alt="HighWise" />
+      <nav>
+        <a class="active" href="c1-caseload.html">Caseload</a>
+        <a href="#">Colleges</a>
+        <a href="#">Settings</a>
+      </nav>
+      <div class="foot">Counselor · /app</div>
+    </aside>
+    <div class="main">
+      <header class="topbar">
+        <div>
+          <h1>Caseload</h1>
+          <p>See every student and open a file.</p>
+        </div>
+        <button type="button">+ Add student</button>
+      </header>
+      <div class="content rise">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Student</th>
+              <th>Year</th>
+              <th>School</th>
+              <th>List</th>
+              <th>Next task</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="selected">
+              <td class="student-name"><a href="c3-list.html">Maya Chen</a></td>
+              <td>2027</td>
+              <td>Lincoln High</td>
+              <td>6 schools</td>
+              <td>Common App essay draft</td>
+            </tr>
+            <tr>
+              <td class="student-name">Jordan Hale</td>
+              <td>2027</td>
+              <td>Lincoln High</td>
+              <td>3 schools</td>
+              <td>Request teacher rec</td>
+            </tr>
+            <tr>
+              <td class="student-name">Ava Brooks</td>
+              <td>2028</td>
+              <td>Westfield Academy</td>
+              <td>1 school</td>
+              <td class="muted">—</td>
+            </tr>
+            <tr>
+              <td class="student-name">Noah Patel</td>
+              <td>2027</td>
+              <td>Riverside Prep</td>
+              <td>8 schools</td>
+              <td>Visit UW–Madison</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

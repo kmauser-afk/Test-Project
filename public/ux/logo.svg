@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 64" role="img" aria-label="HighWise">
+  <defs>
+    <style>
+      .word { font-family: "Source Serif 4", "Iowan Old Style", Georgia, serif; font-weight: 700; font-size: 34px; }
+      .high { fill: #0B1F3A; }
+      .wise { fill: #C49425; }
+    </style>
+  </defs>
+  <!-- Cap + two chevrons lockup mark -->
+  <g transform="translate(4,6)" fill="none" stroke="#0B1F3A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 28 L26 12 L44 28" />
+    <path d="M12 34 L26 22 L40 34" />
+    <path d="M14 22 Q26 6 38 22" fill="#0B1F3A" stroke="none" />
+    <rect x="18" y="14" width="16" height="6" rx="1" fill="#0B1F3A" stroke="none" />
+  </g>
+  <text x="58" y="42" class="word"><tspan class="high">High</tspan><tspan class="wise">Wise</tspan></text>
+</svg>
